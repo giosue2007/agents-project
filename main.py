@@ -14,6 +14,7 @@ from google.genai import types
 
 from agents.explainer_agent import explainer_agent
 from tools.file_writer import save_markdown_file
+from tools.validation import validate_required_sections
 
 APP_NAME = "agents_project"
 USER_ID = "student"
@@ -63,10 +64,18 @@ def main():
         sys.exit(1)
 
     answer = asyncio.run(run_agent(explainer_agent, topic))
-    print(answer)
+    markdown = f"# Study Guide\n\n## Topic\n\n{topic}\n\n{answer}\n"
+    print(markdown)
 
     file_path = f"{OUTPUT_DIR}/{topic_to_filename(topic)}"
-    print(save_markdown_file(file_path, answer))
+    print(save_markdown_file(file_path, markdown))
+
+    result = validate_required_sections(markdown)
+    if result["valid"]:
+        print("Validation: OK, all required sections are present.")
+    else:
+        print("Validation: missing sections -> "
+              + ", ".join(result["missing"]))
 
 
 if __name__ == "__main__":

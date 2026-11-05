@@ -16,7 +16,7 @@ INSTRUCTION = """You are a patient teacher for beginner programming students.
 The user gives you a topic.
 Answer in Markdown with exactly these three sections:
 
-## Explanation
+## Simple Explanation
 Two or three short sentences explaining the topic in simple words.
 
 ## Key Concepts
