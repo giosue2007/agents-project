@@ -16,6 +16,7 @@ import sys
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
+from config import ConfigError, check_config
 from agents.explainer_agent import explainer_agent
 from agents.practice_designer_agent import practice_designer_agent
 from agents.reviewer_agent import reviewer_agent
@@ -32,10 +33,18 @@ OUTPUT_DIR = "output"
 def get_topic():
     """
     Return the topic from the command line, or ask the user for it.
+    Raise ValueError if the topic is empty.
     """
     if len(sys.argv) > 1:
-        return " ".join(sys.argv[1:]).strip()
-    return input("Topic: ").strip()
+        topic = " ".join(sys.argv[1:])
+    else:
+        topic = input("Topic: ")
+    if not topic.strip():
+        raise ValueError(
+            "Topic cannot be empty.\n"
+            "Usage: python3 main.py \"<topic>\""
+        )
+    return topic.strip()
 
 
 def topic_to_filename(topic):
@@ -152,27 +161,41 @@ async def run_workflow(topic):
 
 def main():
     """
-    Get the topic, run the workflow, validate and save the guide.
+    Check the input and configuration, run the workflow,
+    validate and save the guide. Return the exit status.
     """
-    topic = get_topic()
-    if not topic:
-        print("Usage: python3 main.py \"<topic>\"")
-        sys.exit(1)
+    try:
+        topic = get_topic()
+        print("Checking configuration...")
+        config = check_config()
+        print(f"Configuration OK (model: {config['MODEL_NAME']})\n")
+    except (ValueError, ConfigError) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
 
     final_markdown = asyncio.run(run_workflow(topic))
+    status = 0
 
     print("\nValidation Tool: checking required sections...")
     result = validate_required_sections(final_markdown)
     if result["valid"]:
         print("Validation: OK, all required sections are present.")
     else:
-        print("Validation: missing sections -> "
-              + ", ".join(result["missing"]))
+        print("Validation FAILED: missing sections -> "
+              + ", ".join(result["missing"]), file=sys.stderr)
+        print("The guide is still saved so you can inspect it. "
+              "Try running the command again.", file=sys.stderr)
+        status = 1
 
     print("Save Markdown Tool: writing the file...")
     file_path = f"{OUTPUT_DIR}/{topic_to_filename(topic)}"
-    print(save_markdown_file(file_path, final_markdown))
+    message = save_markdown_file(file_path, final_markdown)
+    if message.startswith("Error"):
+        print(message, file=sys.stderr)
+        return 1
+    print(message)
+    return status
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
