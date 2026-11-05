@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Entry point: build a study guide for a topic with two agents.
+Entry point: build a study guide for a topic with several agents.
 
 Usage:
     python3 main.py "Python decorators"
@@ -14,6 +14,7 @@ from google.genai import types
 
 from agents.explainer_agent import explainer_agent
 from agents.practice_designer_agent import practice_designer_agent
+from agents.reviewer_agent import reviewer_agent
 from tools.file_writer import save_markdown_file
 from tools.validation import validate_required_sections
 
@@ -52,8 +53,9 @@ async def run_agent(agent, text):
 
 async def build_study_guide(topic):
     """
-    Run the Explainer Agent, then give its explanation to the
-    Practice Designer Agent, and return the full Markdown guide.
+    Run the agents one after the other:
+    Explainer -> Practice Designer -> Reviewer.
+    Return the full Markdown guide.
     """
     explanation = await run_agent(explainer_agent, topic)
 
@@ -63,10 +65,13 @@ async def build_study_guide(topic):
     )
     practice = await run_agent(practice_designer_agent, practice_request)
 
-    return (
+    draft = (
         f"# Study Guide\n\n## Topic\n\n{topic}\n\n"
         f"{explanation}\n\n{practice}\n"
     )
+    review = await run_agent(reviewer_agent, draft)
+
+    return f"{draft}\n{review}\n"
 
 
 def main():
