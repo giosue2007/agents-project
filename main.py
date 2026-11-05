@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Entry point: build a study guide for a topic with several agents.
+Entry point: build a complete study guide for a topic.
+
+Workflow:
+    Topic -> Explainer -> Practice Designer -> Draft -> Reviewer
+    -> Final Markdown -> Validation -> Save
 
 Usage:
     python3 main.py "Python decorators"
@@ -23,18 +27,31 @@ USER_ID = "student"
 OUTPUT_DIR = "output"
 
 
+# ---------- Input ----------
+
+def get_topic():
+    """
+    Return the topic from the command line, or ask the user for it.
+    """
+    if len(sys.argv) > 1:
+        return " ".join(sys.argv[1:]).strip()
+    return input("Topic: ").strip()
+
+
 def topic_to_filename(topic):
     """
     Turn a topic into a safe file name, e.g. 'Python decorators'
     becomes 'python_decorators.md'.
     """
     name = re.sub(r"[^a-z0-9]+", "_", topic.lower()).strip("_")
-    return (name or "explanation") + ".md"
+    return (name or "study_guide") + ".md"
 
+
+# ---------- Agents ----------
 
 async def run_agent(agent, text):
     """
-    Send text to the agent and return its final answer as a string.
+    Send text to an agent and return its final answer as a string.
     """
     runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
     session = await runner.session_service.create_session(
@@ -48,58 +65,113 @@ async def run_agent(agent, text):
     ):
         if event.is_final_response() and event.content and event.content.parts:
             answer = "".join(part.text or "" for part in event.content.parts)
-    return answer
+    return answer.strip()
 
 
-async def build_study_guide(topic):
+async def run_explainer_agent(topic):
     """
-    Run the agents one after the other:
-    Explainer -> Practice Designer -> Reviewer.
-    Return the full Markdown guide.
+    Return the explanation, key concepts and example for the topic.
     """
-    explanation = await run_agent(explainer_agent, topic)
+    return await run_agent(explainer_agent, topic)
 
-    practice_request = (
-        f"Topic: {topic}\n\n"
-        f"Explanation:\n{explanation}"
+
+async def run_practice_designer_agent(topic, explanation):
+    """
+    Return a practice exercise and common mistakes, based on
+    the topic and the explanation.
+    """
+    request = f"Topic: {topic}\n\nExplanation:\n{explanation}"
+    return await run_agent(practice_designer_agent, request)
+
+
+async def run_reviewer_agent(draft):
+    """
+    Return review comments for the draft study guide.
+    """
+    return await run_agent(reviewer_agent, draft)
+
+
+# ---------- Markdown assembly ----------
+
+def assemble_markdown(topic, explanation, practice):
+    """
+    Build the draft study guide (everything before the review).
+    """
+    return (
+        f"# Topic\n\n{topic}\n\n"
+        f"{explanation}\n\n"
+        f"{practice}\n"
     )
-    practice = await run_agent(practice_designer_agent, practice_request)
 
-    draft = (
-        f"# Study Guide\n\n## Topic\n\n{topic}\n\n"
-        f"{explanation}\n\n{practice}\n"
+
+def get_recommendation(review):
+    """
+    Return the reviewer's recommendation line, or a default text.
+    """
+    match = re.search(r"Recommendation:\**\s*(.+)", review)
+    if match:
+        return match.group(1).strip()
+    return "No recommendation given."
+
+
+def assemble_final_markdown(topic, draft, review):
+    """
+    Build the final guide: draft + review comments + final summary.
+    """
+    summary = (
+        "## Final Summary\n\n"
+        f"This study guide covers **{topic}**: a simple explanation, "
+        "key concepts, an example, a practice exercise and common "
+        "mistakes.\n\n"
+        f"**Reviewer recommendation:** {get_recommendation(review)}\n"
     )
-    review = await run_agent(reviewer_agent, draft)
+    return f"{draft}\n{review}\n\n{summary}"
 
-    return f"{draft}\n{review}\n"
+
+# ---------- Workflow ----------
+
+async def run_workflow(topic):
+    """
+    Run the agents in order and return the final Markdown guide.
+    """
+    print("[1/5] Explainer Agent: writing the explanation...")
+    explanation = await run_explainer_agent(topic)
+
+    print("[2/5] Practice Designer Agent: creating the exercise...")
+    practice = await run_practice_designer_agent(topic, explanation)
+
+    print("[3/5] Assembling the draft study guide...")
+    draft = assemble_markdown(topic, explanation, practice)
+
+    print("[4/5] Reviewer Agent: reviewing the draft...")
+    review = await run_reviewer_agent(draft)
+
+    print("[5/5] Assembling the final Markdown...")
+    return assemble_final_markdown(topic, draft, review)
 
 
 def main():
     """
-    Read the topic from the command line (or ask for it), build the
-    study guide, print it, save it in output/ and validate it.
+    Get the topic, run the workflow, validate and save the guide.
     """
-    if len(sys.argv) > 1:
-        topic = " ".join(sys.argv[1:])
-    else:
-        topic = input("Topic: ").strip()
-
+    topic = get_topic()
     if not topic:
         print("Usage: python3 main.py \"<topic>\"")
         sys.exit(1)
 
-    markdown = asyncio.run(build_study_guide(topic))
-    print(markdown)
+    final_markdown = asyncio.run(run_workflow(topic))
 
-    file_path = f"{OUTPUT_DIR}/{topic_to_filename(topic)}"
-    print(save_markdown_file(file_path, markdown))
-
-    result = validate_required_sections(markdown)
+    print("\nValidation Tool: checking required sections...")
+    result = validate_required_sections(final_markdown)
     if result["valid"]:
         print("Validation: OK, all required sections are present.")
     else:
         print("Validation: missing sections -> "
               + ", ".join(result["missing"]))
+
+    print("Save Markdown Tool: writing the file...")
+    file_path = f"{OUTPUT_DIR}/{topic_to_filename(topic)}"
+    print(save_markdown_file(file_path, final_markdown))
 
 
 if __name__ == "__main__":

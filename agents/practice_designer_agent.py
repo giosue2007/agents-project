@@ -32,11 +32,15 @@ One or two sentences describing what the student must do.
 - First hint.
 - Second hint (optional).
 
-Return only this section."""
+## Common Mistakes
+- Two or three mistakes beginners often make with this topic,
+  one short line each.
+
+Return only these two sections."""
 
 practice_designer_agent = Agent(
     name="practice_designer_agent",
     model=LiteLlm(model=MODEL_NAME),
-    description="Creates a small practice exercise from an explanation.",
+    description="Creates a small exercise and lists common mistakes.",
     instruction=INSTRUCTION,
 )
