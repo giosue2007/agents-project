@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Entry point: run the Explainer Agent on a topic.
+Entry point: build a study guide for a topic with two agents.
 
 Usage:
     python3 main.py "Python decorators"
@@ -13,6 +13,7 @@ from google.adk.runners import InMemoryRunner
 from google.genai import types
 
 from agents.explainer_agent import explainer_agent
+from agents.practice_designer_agent import practice_designer_agent
 from tools.file_writer import save_markdown_file
 from tools.validation import validate_required_sections
 
@@ -49,10 +50,29 @@ async def run_agent(agent, text):
     return answer
 
 
+async def build_study_guide(topic):
+    """
+    Run the Explainer Agent, then give its explanation to the
+    Practice Designer Agent, and return the full Markdown guide.
+    """
+    explanation = await run_agent(explainer_agent, topic)
+
+    practice_request = (
+        f"Topic: {topic}\n\n"
+        f"Explanation:\n{explanation}"
+    )
+    practice = await run_agent(practice_designer_agent, practice_request)
+
+    return (
+        f"# Study Guide\n\n## Topic\n\n{topic}\n\n"
+        f"{explanation}\n\n{practice}\n"
+    )
+
+
 def main():
     """
-    Read the topic from the command line (or ask for it), print
-    the agent's explanation and save it as Markdown in output/.
+    Read the topic from the command line (or ask for it), build the
+    study guide, print it, save it in output/ and validate it.
     """
     if len(sys.argv) > 1:
         topic = " ".join(sys.argv[1:])
@@ -63,8 +83,7 @@ def main():
         print("Usage: python3 main.py \"<topic>\"")
         sys.exit(1)
 
-    answer = asyncio.run(run_agent(explainer_agent, topic))
-    markdown = f"# Study Guide\n\n## Topic\n\n{topic}\n\n{answer}\n"
+    markdown = asyncio.run(build_study_guide(topic))
     print(markdown)
 
     file_path = f"{OUTPUT_DIR}/{topic_to_filename(topic)}"
